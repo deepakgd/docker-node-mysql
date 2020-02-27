@@ -1,0 +1,169 @@
+Create node and mysql using docker:
+
+Method 1 without docker compose file:
+
+creating mysql docker:
+
+1. create mysql-docker folder
+
+2. create Dockerfile
+
+From mysql:5.7.29
+
+MAINTAINER Deepak Govindarajan <deepak.g@krds.fr>
+
+ENV MYSQL_DATABASE=dev_test \
+    MYSQL_ROOT_PASSWORD=password
+
+
+3. pull and build image
+
+
+docker image build -i mysql .
+
+4. create volume for mysql data to store
+
+docker volume create mysqlvolume 
+
+5. create bridge network
+
+docker network create --driver bridge firstbridgenetwork
+
+5. run container with volume attached
+
+docker container run -it -d --name mysql --rm -p 3307:3306 -v mysqlvolume:/var/lib/mysql --net firstbridgenetwork mysql
+
+where mysqlvolume is volume which we created 
+/var/lib/mysql - default location for mysql which is get from docker hub mysql docs 
+mysql - image name which we build using Dockerfile
+
+6. To check whether data stored and able to fetch even docker container stopped and started 
+
+    - run step 5 
+    - docker container exec -it mysql mysql -u root -p
+    - enter password
+    - inside mysql command line select table
+        - use dev_test
+        - create table 
+            CREATE TABLE students (id INT(6) UNSIGNED AUTO_INCREMENT PRIMARY KEY, name VARCHAR(30), email VARCHAR(30));
+        - insert data
+            INSERT INTO students VALUES (1, 'test', 'asbc@asdc.com');
+        - SELECT * FROM students;
+
+7. stop container
+
+docker container stop mysql
+
+8. run step 5 again to start container 
+
+9. go to mysql command line of docker container and test it
+
+
+
+creating node app:
+
+1. create Docker file
+
+# pull image from docker hub
+FROM node:12.16.1-alpine3.9
+
+# creating app directory
+RUN mkdir /app
+#set workdirectory as /app so that no need to mention each timne /app 
+WORKDIR /app
+
+# copy local package.json and yarn.lock to work directory
+COPY package.json .
+COPY yarn.lock .
+
+# install dependencies by running yarn command
+RUN yarn 
+
+# copy all local source code to work directory
+COPY . .
+
+# create label
+LABEL maintainer="Deepak Govindarajan <deepak.g@krds.fr>"
+
+# start server 
+CMD node index.js
+
+2. create index.js
+
+require('dotenv').config();
+
+const express = require('express'),
+    bodyParser = require('body-parser'),
+    mysql = require('mysql');
+
+const app = express();
+
+var connection = mysql.createConnection({
+    host     : process.env.DB_HOST,
+    port     : process.env.DB_PORT,
+    user     : process.env.DB_USER,
+    password : process.env.DB_PASSWORD,
+    database : process.env.DB_DATABASE
+});
+
+console.log({
+    host     : process.env.DB_HOST,
+    port     : process.env.DB_PORT,
+    user     : process.env.DB_USER,
+    password : process.env.DB_PASSWORD,
+    database : process.env.DB_DATABASE
+})
+
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: false }));
+
+app.get('/', (req, res)=>{
+    res.send('hello world')
+})
+
+app.get('/data', (req, res) => {
+    connection.query('SELECT * FROM students', function (error, results, fields) {
+        if (error) {
+            console.log(error)
+            return res.send(error);
+        }
+        // connected!
+        console.log('connected')
+        return res.json(results)
+    });
+})
+
+app.listen(3000, function(){
+    console.log('APP listening in port 3000')
+});
+
+here, we getting DB_HOST, DB_PORT, DB_USER, DB_PASSWORD and DB_DATABASE from environmental variable
+
+4. Build image 
+
+docker image build -t nodeserver .
+
+5. To check image
+
+docker image ls
+
+6. To run node server container 
+
+docker container run -it -d --name nodeapp -p 8000:3000 --net firstbridgenetwork --rm -e DB_HOST=mysqlserver -e DB_PORT=3306 -e DB_USER=root -e DB_PASSWORD=password -e DB_DATABASE=dev_test nodeserver
+
+
+IMPORTANT note: here we used DB_HOST=mysqlserver it means mysql container name 
+DB_PORT as 3306 not 3307 because Docker will map the 3307 port of the host to the 3306 port of the container. So you can access from Sequel to localhost:3307.
+However, it does not mean that the container is listenting to 3307; the container is in fact still listening to 3306. When others containers tries to access the mysql DNS, it gets translated to the internal container IP, therefore you must connect to 3306.
+
+reference: https://stackoverflow.com/questions/45399941/node-js-connect-to-mysql-docker-container-econnrefused
+
+
+6. To check network connection between two container
+
+docker container exec -it nodeapp ping mysqlserver
+
+7. Open browser http://localhost:8000 and http://localhost:8000/data - to get students table content as json
+
+
+code available in github 
