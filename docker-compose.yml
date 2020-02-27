@@ -1,0 +1,25 @@
+version: '3.7'
+
+services:
+  mysqlserver:
+    build: ./mysql-docker
+    ports:
+      - '3307:3306'
+    volumes:
+      - 'mysqlvolume:/var/lib/mysql'
+
+  nodeapp:
+    build: ./node-docker
+    depends_on:
+      - 'mysqlserver'
+    ports:
+      - '8000:3000'
+    environment:
+      - DB_HOST=mysqlserver
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=password
+      - DB_DATABASE=dev_test
+    
+volumes:
+  mysqlvolume: 
